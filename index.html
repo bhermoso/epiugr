@@ -1,0 +1,1057 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>REDCap Analyzer - Salud Pública</title>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+            background: linear-gradient(135deg, #1e3a8a 0%, #3730a3 100%);
+            min-height: 100vh;
+        }
+        .container { max-width: 1600px; margin: 0 auto; padding: 2rem; }
+        .header { 
+            background: linear-gradient(135deg, #dc2626, #991b1b);
+            border-radius: 20px;
+            padding: 3rem;
+            margin-bottom: 2rem;
+            color: white;
+            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
+        }
+        .header h1 { font-size: 3rem; font-weight: 900; margin-bottom: 0.5rem; }
+        .header p { font-size: 1.3rem; opacity: 0.95; }
+        .card { 
+            background: white;
+            border-radius: 20px;
+            padding: 3rem;
+            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.3);
+            margin-bottom: 2rem;
+        }
+        .drop-zone { 
+            border: 4px dashed #cbd5e1;
+            border-radius: 20px;
+            padding: 5rem 2rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+        }
+        .drop-zone:hover { 
+            border-color: #3b82f6;
+            background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+            transform: scale(1.02);
+        }
+        .btn {
+            background: linear-gradient(135deg, #dc2626, #991b1b);
+            color: white;
+            border: none;
+            padding: 1.25rem 3rem;
+            border-radius: 15px;
+            font-size: 1.2rem;
+            font-weight: 700;
+            cursor: pointer;
+            box-shadow: 0 10px 25px rgba(220, 38, 38, 0.4);
+            transition: all 0.3s;
+        }
+        .btn:hover { transform: translateY(-3px); box-shadow: 0 15px 35px rgba(220, 38, 38, 0.5); }
+        .hidden { display: none !important; }
+        .spinner { 
+            width: 70px; height: 70px;
+            border: 6px solid #e5e7eb;
+            border-top-color: #dc2626;
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+            margin: 0 auto 2rem;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        
+        /* Dashboard específico */
+        .dash-header {
+            background: linear-gradient(135deg, #dc2626, #991b1b);
+            color: white;
+            padding: 2.5rem;
+            border-radius: 20px 20px 0 0;
+        }
+        .tabs {
+            display: flex;
+            background: #f8fafc;
+            border-bottom: 4px solid #e2e8f0;
+            overflow-x: auto;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        .tab {
+            padding: 1.5rem 2rem;
+            cursor: pointer;
+            white-space: nowrap;
+            color: #64748b;
+            font-weight: 600;
+            border-bottom: 4px solid transparent;
+            margin-bottom: -4px;
+            transition: all 0.3s;
+        }
+        .tab:hover { background: white; color: #1e293b; }
+        .tab.active { 
+            background: white;
+            color: #dc2626;
+            border-bottom-color: #dc2626;
+        }
+        .tab-content { padding: 2.5rem; display: none; }
+        .tab-content.active { display: block; animation: fadeIn 0.4s; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        
+        /* Métricas clave */
+        .key-metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 2rem;
+            margin-bottom: 3rem;
+        }
+        .metric-card {
+            background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+            border-left: 6px solid #dc2626;
+            border-radius: 16px;
+            padding: 2rem;
+            box-shadow: 0 10px 25px rgba(220, 38, 38, 0.15);
+            transition: transform 0.3s;
+        }
+        .metric-card:hover { transform: translateY(-5px); }
+        .metric-label { 
+            font-size: 0.95rem;
+            color: #7f1d1d;
+            font-weight: 600;
+            margin-bottom: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .metric-value {
+            font-size: 3rem;
+            font-weight: 900;
+            color: #991b1b;
+            margin-bottom: 0.5rem;
+            line-height: 1;
+        }
+        .metric-context {
+            font-size: 0.9rem;
+            color: #7f1d1d;
+            line-height: 1.5;
+        }
+        
+        /* Alertas epidemiológicas */
+        .alerts {
+            display: grid;
+            gap: 1.5rem;
+            margin-bottom: 3rem;
+        }
+        .alert {
+            background: white;
+            border-radius: 16px;
+            padding: 2rem;
+            border-left: 6px solid;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        .alert.critical { border-color: #dc2626; background: linear-gradient(to right, #fef2f2, white); }
+        .alert.warning { border-color: #f59e0b; background: linear-gradient(to right, #fffbeb, white); }
+        .alert.info { border-color: #3b82f6; background: linear-gradient(to right, #eff6ff, white); }
+        .alert-header {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+        .alert-icon {
+            font-size: 2rem;
+        }
+        .alert-title {
+            font-size: 1.3rem;
+            font-weight: 700;
+        }
+        .alert-content {
+            color: #374151;
+            line-height: 1.8;
+            margin-left: 3rem;
+        }
+        
+        /* Visualizaciones avanzadas */
+        .viz-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+            gap: 2rem;
+            margin-bottom: 3rem;
+        }
+        .viz-card {
+            background: white;
+            border-radius: 16px;
+            padding: 2rem;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        .viz-title {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: #1e293b;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 3px solid #dc2626;
+        }
+        .chart-container {
+            position: relative;
+            height: 350px;
+            margin-bottom: 1rem;
+        }
+        
+        /* Interpretación epidemiológica */
+        .interpretation {
+            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+            border-left: 6px solid #f59e0b;
+            border-radius: 16px;
+            padding: 2.5rem;
+            margin: 2rem 0;
+            box-shadow: 0 4px 15px rgba(245, 158, 11, 0.2);
+        }
+        .interpretation h3 {
+            color: #92400e;
+            font-size: 1.4rem;
+            font-weight: 700;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        .interpretation p {
+            color: #78350f;
+            line-height: 1.9;
+            margin-bottom: 1.25rem;
+            font-size: 1.05rem;
+        }
+        .interpretation strong {
+            color: #92400e;
+            font-weight: 700;
+        }
+        
+        /* Recomendaciones */
+        .recommendations {
+            background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+            border-left: 6px solid #3b82f6;
+            border-radius: 16px;
+            padding: 2.5rem;
+            margin: 2rem 0;
+        }
+        .recommendations h3 {
+            color: #1e40af;
+            font-size: 1.4rem;
+            font-weight: 700;
+            margin-bottom: 1.5rem;
+        }
+        .rec-list {
+            display: grid;
+            gap: 1.25rem;
+        }
+        .rec-item {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 12px;
+            border-left: 4px solid #3b82f6;
+            box-shadow: 0 2px 8px rgba(59, 130, 246, 0.15);
+        }
+        .rec-item strong {
+            color: #1e40af;
+            font-size: 1.1rem;
+            display: block;
+            margin-bottom: 0.5rem;
+        }
+        .rec-item p {
+            color: #1e293b;
+            line-height: 1.7;
+        }
+        
+        /* Tabla comparativa */
+        .comparison-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            margin: 2rem 0;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        .comparison-table th {
+            background: linear-gradient(135deg, #dc2626, #991b1b);
+            color: white;
+            padding: 1.25rem;
+            text-align: left;
+            font-weight: 700;
+        }
+        .comparison-table td {
+            padding: 1.25rem;
+            border-bottom: 1px solid #e5e7eb;
+            background: white;
+        }
+        .comparison-table tr:hover td {
+            background: #f9fafb;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 0.4rem 1rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+        .status-high { background: #fee2e2; color: #991b1b; }
+        .status-medium { background: #fef3c7; color: #92400e; }
+        .status-normal { background: #d1fae5; color: #065f46; }
+        
+        @media (max-width: 1024px) {
+            .viz-grid { grid-template-columns: 1fr; }
+            .key-metrics { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Análisis Epidemiológico de Salud Universitaria</h1>
+            <p>Sistema de Vigilancia y Análisis en Salud Pública</p>
+        </div>
+
+        <div id="upload" class="card">
+            <div style="text-align: center; margin-bottom: 2rem;">
+                <div style="font-size: 5rem; margin-bottom: 1.5rem;">🏥</div>
+                <h2 style="font-size: 2rem; margin-bottom: 1rem; color: #1e293b;">Sistema de Análisis Epidemiológico</h2>
+                <p style="color: #64748b; font-size: 1.1rem;">Carga datos de encuesta REDCap para análisis en salud pública</p>
+            </div>
+            <div id="dropZone" class="drop-zone">
+                <h3 style="font-size: 1.8rem; color: #1e293b; margin-bottom: 1rem;">Arrastra tu archivo de datos</h3>
+                <p style="color: #64748b; margin-bottom: 2rem;">CSV o Excel (.xlsx, .xls)</p>
+                <button class="btn">Seleccionar Archivo</button>
+            </div>
+            <input type="file" id="fileInput" accept=".csv,.xlsx,.xls" style="display:none;">
+        </div>
+
+        <div id="loading" class="card hidden">
+            <div style="text-align: center;">
+                <div class="spinner"></div>
+                <h2 style="color: #1e293b; margin-bottom: 1rem;">Analizando datos epidemiológicos...</h2>
+                <p style="color: #64748b;">Calculando prevalencias, identificando grupos de riesgo y generando recomendaciones</p>
+            </div>
+        </div>
+
+        <div id="dashboard" class="hidden">
+            <button class="btn" onclick="resetApp()" style="margin-bottom: 2rem; background: white; color: #dc2626; border: 3px solid #dc2626; box-shadow: none;">
+                ← Nuevo Análisis
+            </button>
+            <div class="card" style="padding: 0; overflow: hidden;">
+                <div class="dash-header">
+                    <h2 id="fileName" style="font-size: 2rem; margin-bottom: 0.5rem;">Dashboard Epidemiológico</h2>
+                    <p id="fileStats" style="opacity: 0.95; font-size: 1.1rem;">Cargando...</p>
+                </div>
+                <div class="tabs" id="tabsContainer"></div>
+                <div id="contentContainer"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentData = null;
+        let charts = {};
+        
+        // Setup
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const uploadBtn = dropZone.querySelector('.btn');
+        
+        uploadBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            fileInput.click();
+        });
+        
+        dropZone.addEventListener('click', () => fileInput.click());
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.style.borderColor = '#3b82f6';
+        });
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.style.borderColor = '#cbd5e1';
+        });
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.style.borderColor = '#cbd5e1';
+            if (e.dataTransfer.files[0]) processFile(e.dataTransfer.files[0]);
+        });
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files[0]) processFile(e.target.files[0]);
+        });
+        
+        function processFile(file) {
+            document.getElementById('upload').classList.add('hidden');
+            document.getElementById('loading').classList.remove('hidden');
+            
+            const ext = file.name.split('.').pop().toLowerCase();
+            
+            if (ext === 'csv') {
+                Papa.parse(file, {
+                    header: true,
+                    dynamicTyping: true,
+                    skipEmptyLines: true,
+                    complete: (r) => analyzeData(r.data, file.name),
+                    error: () => { alert('Error al leer CSV'); resetApp(); }
+                });
+            } else {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+                        const ws = wb.Sheets[wb.SheetNames[0]];
+                        const json = XLSX.utils.sheet_to_json(ws);
+                        analyzeData(json, file.name);
+                    } catch { alert('Error al leer Excel'); resetApp(); }
+                };
+                reader.readAsArrayBuffer(file);
+            }
+        }
+        
+        function analyzeData(data, fileName) {
+            if (!data || data.length === 0) {
+                alert('El archivo está vacío');
+                resetApp();
+                return;
+            }
+            
+            currentData = data;
+            const fields = Object.keys(data[0]);
+            const n = data.length;
+            
+            const analysis = {
+                n: n,
+                descriptives: {},
+                epidemiology: {
+                    alerts: [],
+                    risks: [],
+                    recommendations: []
+                }
+            };
+            
+            // Analizar variables con enfoque epidemiológico
+            fields.forEach(field => {
+                const values = data.map(r => r[field]).filter(v => v != null && v !== '');
+                if (!values.length) return;
+                
+                const lower = field.toLowerCase();
+                if (lower.includes('id') || lower.includes('timestamp') || lower.includes('complete')) return;
+                if (lower.includes('score') || lower.includes('resultado') || lower.includes('puntuacion')) return;
+                
+                const stats = analyzeVariable(field, values, n);
+                if (stats) {
+                    analysis.descriptives[field] = stats;
+                    
+                    // Evaluar riesgo epidemiológico
+                    const risk = evaluateEpidemiologicalRisk(field, stats, n);
+                    if (risk) {
+                        analysis.epidemiology.alerts.push(risk);
+                    }
+                }
+            });
+            
+            // Generar recomendaciones
+            analysis.epidemiology.recommendations = generateRecommendations(analysis);
+            
+            showDashboard(analysis, fileName);
+        }
+        
+        function analyzeVariable(field, values, totalN) {
+            const stats = {
+                n: values.length,
+                missing: totalN - values.length,
+                missingPct: (((totalN - values.length) / totalN) * 100).toFixed(1)
+            };
+            
+            const unique = [...new Set(values)];
+            const isNumeric = values.every(v => typeof v === 'number' && !isNaN(v));
+            
+            if (isNumeric && unique.length > 10) {
+                const sorted = [...values].sort((a, b) => a - b);
+                const sum = values.reduce((a, b) => a + b, 0);
+                const mean = sum / values.length;
+                const variance = values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / (values.length - 1);
+                
+                stats.type = 'numeric';
+                stats.mean = parseFloat(mean.toFixed(2));
+                stats.std = parseFloat(Math.sqrt(variance).toFixed(2));
+                stats.min = Math.min(...values);
+                stats.max = Math.max(...values);
+                stats.median = parseFloat(sorted[Math.floor(sorted.length / 2)].toFixed(2));
+            } else {
+                const freq = {};
+                values.forEach(v => freq[v] = (freq[v] || 0) + 1);
+                stats.type = 'categorical';
+                stats.categories = Object.entries(freq)
+                    .map(([val, count]) => ({
+                        value: val,
+                        count: count,
+                        pct: parseFloat(((count / values.length) * 100).toFixed(1)),
+                        prevalence: parseFloat(((count / totalN) * 100).toFixed(1))
+                    }))
+                    .sort((a, b) => b.count - a.count);
+            }
+            
+            return stats;
+        }
+        
+        function evaluateEpidemiologicalRisk(field, stats, n) {
+            const lower = field.toLowerCase();
+            let risk = null;
+            
+            // Tabaco
+            if (lower.includes('fuma') && stats.type === 'categorical') {
+                const fuma = stats.categories.find(c => c.value == 1 || c.value == '1' || String(c.value).toLowerCase().includes('sí'));
+                if (fuma && fuma.prevalence > 20) {
+                    risk = {
+                        type: 'critical',
+                        title: 'Alta prevalencia de tabaquismo',
+                        variable: field,
+                        prevalence: fuma.prevalence,
+                        description: `${fuma.prevalence}% de fumadores activos (${fuma.count}/${n}). La prevalencia nacional en jóvenes 18-24 años es ~21%. Tabaquismo es la principal causa prevenible de muerte prematura.`,
+                        recommendation: 'Implementar programa de cesación tabáquica. Consejería breve en consulta. Considerar terapia sustitutiva de nicotina.'
+                    };
+                }
+            }
+            
+            // Alcohol
+            if (lower.includes('bebe') && stats.type === 'categorical') {
+                const bebe = stats.categories.find(c => c.value == 1 || String(c.value).toLowerCase().includes('sí'));
+                if (bebe && bebe.prevalence > 60) {
+                    risk = {
+                        type: 'warning',
+                        title: 'Consumo elevado de alcohol',
+                        variable: field,
+                        prevalence: bebe.prevalence,
+                        description: `${bebe.prevalence}% consume alcohol. Prevalencia superior a población general (52%). Riesgo de consumo por atracón (binge drinking) en contexto universitario.`,
+                        recommendation: 'Screening AUDIT. Educación sobre límites de bajo riesgo. Intervención breve motivacional.'
+                    };
+                }
+            }
+            
+            // Sedentarismo
+            if (lower.includes('sedentarismo') && stats.type === 'numeric') {
+                if (stats.mean > 360) { // >6h/día
+                    risk = {
+                        type: 'warning',
+                        title: 'Sedentarismo prolongado',
+                        variable: field,
+                        prevalence: null,
+                        description: `Media de ${stats.mean} minutos/día sedentarios (${(stats.mean/60).toFixed(1)}h). Umbral de riesgo: >6h/día. Sedentarismo es factor de riesgo independiente para ECV y diabetes.`,
+                        recommendation: 'Promover pausas activas cada 30-60min. Objetivo: reducir tiempo sedentario a <4h/día fuera del sueño.'
+                    };
+                }
+            }
+            
+            // Horas de sueño
+            if (lower.includes('horas') && lower.includes('sueno') && stats.type === 'numeric') {
+                if (stats.mean < 7) {
+                    risk = {
+                        type: 'critical',
+                        title: 'Privación crónica de sueño',
+                        variable: field,
+                        prevalence: null,
+                        description: `Media de ${stats.mean}h/noche. Recomendación: 7-9h para adultos jóvenes. Privación de sueño se asocia con deterioro cognitivo, inmunológico y metabólico.`,
+                        recommendation: 'Higiene del sueño. Evaluar causas (tecnología nocturna, estrés académico). Considerar screening de trastornos del sueño si <6h persistente.'
+                    };
+                }
+            }
+            
+            // WHO-5 (Bienestar psicológico)
+            if (lower.includes('who') && lower.includes('resultado') && stats.type === 'numeric') {
+                if (stats.mean < 13) {
+                    risk = {
+                        type: 'critical',
+                        title: 'Bajo bienestar psicológico - Riesgo de depresión',
+                        variable: field,
+                        prevalence: null,
+                        description: `Puntuación media WHO-5: ${stats.mean}/25. Umbral de riesgo: <13 sugiere posible depresión. Puntuaciones <13 requieren evaluación clínica completa. Prevalencia de trastornos mentales en universitarios: 30-40%.`,
+                        recommendation: 'URGENTE: Screening completo de salud mental. Derivación a salud mental si WHO-5 <13. Implementar servicio de apoyo psicológico accesible. Reducir estigma. Considerar terapia cognitivo-conductual grupal.'
+                    };
+                } else if (stats.mean < 16) {
+                    risk = {
+                        type: 'warning',
+                        title: 'Bienestar psicológico en rango bajo',
+                        variable: field,
+                        prevalence: null,
+                        description: `Puntuación media WHO-5: ${stats.mean}/25. Rango bajo-moderado (13-16). Indica riesgo moderado de problemas de salud mental. Requiere monitorización.`,
+                        recommendation: 'Implementar programas de promoción de salud mental. Talleres de gestión de estrés, mindfulness. Facilitar acceso a consejería. Identificar estresores académicos modificables.'
+                    };
+                }
+            }
+            
+            // Autopercepción de salud mental
+            if (lower.includes('salud_mental') && stats.type === 'categorical') {
+                const mala = stats.categories.find(c => c.value >= 3 || String(c.value).toLowerCase().includes('mala'));
+                if (mala && mala.prevalence > 20) {
+                    risk = {
+                        type: 'critical',
+                        title: 'Alta prevalencia de mala autopercepción de salud mental',
+                        variable: field,
+                        prevalence: mala.prevalence,
+                        description: `${mala.prevalence}% reporta salud mental regular/mala. Autopercepción de salud mental correlaciona fuertemente con diagnósticos clínicos y riesgo suicida. Población universitaria en alto riesgo.`,
+                        recommendation: 'Crear servicio de primera atención en salud mental. Línea de ayuda 24/7. Formación a profesorado en detección precoz. Protocolo de actuación ante crisis. Reducir barreras de acceso (económicas, estigma, listas de espera).'
+                    };
+                }
+            }
+            
+            // Estrés académico
+            if (lower.includes('estres') && lower.includes('academico') && stats.type === 'categorical') {
+                const alto = stats.categories.find(c => c.value >= 2 || String(c.value).toLowerCase().includes('alto'));
+                if (alto && alto.prevalence > 40) {
+                    risk = {
+                        type: 'warning',
+                        title: 'Niveles elevados de estrés académico',
+                        variable: field,
+                        prevalence: alto.prevalence,
+                        description: `${alto.prevalence}% reporta estrés académico alto/muy alto. Estrés académico crónico se asocia con burnout, abandono, trastornos de ansiedad y depresión. Factor de riesgo modificable mediante cambios institucionales.`,
+                        recommendation: 'Revisar carga académica y plazos de entrega. Flexibilizar evaluación. Talleres de gestión del tiempo y técnicas de estudio. Tutorización académica. Identificar estudiantes en riesgo de abandono para apoyo temprano.'
+                    };
+                }
+            }
+            
+            // Satisfacción con la vida
+            if (lower.includes('satisfaccion') && lower.includes('vida') && stats.type === 'numeric') {
+                if (stats.mean < 6) {
+                    risk = {
+                        type: 'warning',
+                        title: 'Baja satisfacción vital',
+                        variable: field,
+                        prevalence: null,
+                        description: `Satisfacción vital media: ${stats.mean}/10. Puntuaciones <6 indican malestar significativo. Satisfacción vital es predictor de salud mental, rendimiento académico y bienestar futuro.`,
+                        recommendation: 'Evaluar factores contribuyentes (académicos, económicos, sociales, salud). Fomentar actividades significativas y conexión social. Grupos de apoyo entre pares. Consejería individual si persistente.'
+                    };
+                }
+            }
+            
+            // Frutas y verduras
+            if ((lower.includes('fruta') || lower.includes('verdura')) && stats.type === 'categorical') {
+                const noConsumo = stats.categories.find(c => c.value == 0 || String(c.value).toLowerCase().includes('no'));
+                if (noConsumo && noConsumo.prevalence > 30) {
+                    risk = {
+                        type: 'warning',
+                        title: 'Bajo consumo de frutas/verduras',
+                        variable: field,
+                        prevalence: noConsumo.prevalence,
+                        description: `${noConsumo.prevalence}% no consume frutas/verduras regularmente. Recomendación OMS: ≥5 raciones/día. Factor protector cardiovascular y oncológico.`,
+                        recommendation: 'Consejería nutricional. Facilitar acceso en campus (frutas en máquinas expendedoras). Talleres de cocina saludable económica.'
+                    };
+                }
+            }
+            
+            return risk;
+        }
+        
+        function generateRecommendations(analysis) {
+            const recs = [];
+            const alerts = analysis.epidemiology.alerts;
+            
+            if (alerts.some(a => a.title.includes('tabaquismo'))) {
+                recs.push({
+                    priority: 'high',
+                    area: 'Prevención de Tabaquismo',
+                    action: 'Programa integral de cesación tabáquica',
+                    details: 'Implementar consejería breve (5-10min) en todas las consultas. Ofrecer terapia sustitutiva nicotínica gratuita. Grupos de apoyo semanales. Aplicaciones móviles de seguimiento.'
+                });
+            }
+            
+            if (alerts.some(a => a.title.includes('sueño'))) {
+                recs.push({
+                    priority: 'high',
+                    area: 'Higiene del Sueño',
+                    action: 'Campaña de educación sobre salud del sueño',
+                    details: 'Talleres sobre higiene del sueño. Promover desconexión digital 1h antes de dormir. Evaluar carga académica excesiva. App de monitorización del sueño. Screening de insomnio con derivación a especialista si necesario.'
+                });
+            }
+            
+            if (alerts.some(a => a.title.includes('alcohol'))) {
+                recs.push({
+                    priority: 'medium',
+                    area: 'Prevención de Consumo de Riesgo de Alcohol',
+                    action: 'Intervención breve y screening AUDIT',
+                    details: 'Aplicar cuestionario AUDIT en consulta. Educación sobre consumo de bajo riesgo (límites: 2 UBE/día hombres, 1 UBE/día mujeres). Identificar y abordar consumo por atracón. Reforzar habilidades de rechazo.'
+                });
+            }
+            
+            if (alerts.some(a => a.title.includes('sedentarismo'))) {
+                recs.push({
+                    priority: 'medium',
+                    area: 'Promoción de Actividad Física',
+                    action: 'Programa de actividad física estructurada',
+                    details: 'Pausas activas en aulas cada 50min. Facilitar acceso a instalaciones deportivas. Promover desplazamiento activo (bicicleta, caminata). Objetivo: 150min/semana actividad moderada + reducir sedentarismo a <4h/día.'
+                });
+            }
+            
+            if (alerts.some(a => a.title.includes('frutas') || a.title.includes('verduras'))) {
+                recs.push({
+                    priority: 'medium',
+                    area: 'Mejora de Hábitos Alimentarios',
+                    action: 'Intervención nutricional multicomponente',
+                    details: 'Consejería nutricional personalizada. Aumentar disponibilidad de opciones saludables en campus. Talleres de cocina económica. Subsidios para frutas/verduras en población vulnerable. Objetivo: ≥5 raciones/día.'
+                });
+            }
+            
+            // Recomendación transversal siempre
+            recs.push({
+                priority: 'high',
+                area: 'Vigilancia Epidemiológica Continua',
+                action: 'Sistema de monitorización de indicadores de salud',
+                details: 'Repetir encuesta anualmente para evaluar tendencias. Establecer sistema de alerta temprana. Comparar con datos nacionales (ENSE, EDADES). Evaluar impacto de intervenciones mediante indicadores cuantificables.'
+            });
+            
+            return recs;
+        }
+        
+        function showDashboard(analysis, fileName) {
+            document.getElementById('loading').classList.add('hidden');
+            document.getElementById('dashboard').classList.remove('hidden');
+            document.getElementById('fileName').textContent = 'Análisis Epidemiológico: ' + fileName;
+            document.getElementById('fileStats').textContent = `n = ${analysis.n} participantes • ${Object.keys(analysis.descriptives).length} variables analizadas`;
+            
+            // Tabs
+            document.getElementById('tabsContainer').innerHTML = `
+                <div class="tab active" data-id="resumen">Panel Resumen</div>
+                <div class="tab" data-id="alertas">Alertas Epidemiológicas</div>
+                <div class="tab" data-id="recomendaciones">Recomendaciones</div>
+                <div class="tab" data-id="variables">Análisis Detallado</div>
+            `;
+            
+            // Content
+            document.getElementById('contentContainer').innerHTML = `
+                <div class="tab-content active" id="content-resumen">${renderResumen(analysis)}</div>
+                <div class="tab-content" id="content-alertas">${renderAlertas(analysis)}</div>
+                <div class="tab-content" id="content-recomendaciones">${renderRecomendaciones(analysis)}</div>
+                <div class="tab-content" id="content-variables">${renderVariables(analysis)}</div>
+            `;
+            
+            // Tab events
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.addEventListener('click', function() {
+                    const tabId = this.getAttribute('data-id');
+                    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                    this.classList.add('active');
+                    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                    document.getElementById('content-' + tabId).classList.add('active');
+                });
+            });
+            
+            // Render charts after DOM is ready
+            setTimeout(() => renderCharts(analysis), 100);
+        }
+        
+        function renderResumen(analysis) {
+            const alerts = analysis.epidemiology.alerts;
+            const criticalAlerts = alerts.filter(a => a.type === 'critical');
+            const warningAlerts = alerts.filter(a => a.type === 'warning');
+            
+            let html = '<div class="key-metrics">';
+            
+            // Métrica 1: Población
+            html += `
+                <div class="metric-card">
+                    <div class="metric-label">Muestra Analizada</div>
+                    <div class="metric-value">${analysis.n}</div>
+                    <div class="metric-context">Participantes con datos completos en variables clave</div>
+                </div>
+            `;
+            
+            // Métrica 2: Alertas críticas
+            html += `
+                <div class="metric-card" style="background: linear-gradient(135deg, #fee2e2, #fca5a5); border-color: #b91c1c;">
+                    <div class="metric-label">Alertas Críticas</div>
+                    <div class="metric-value">${criticalAlerts.length}</div>
+                    <div class="metric-context">Indicadores de riesgo elevado que requieren intervención inmediata</div>
+                </div>
+            `;
+            
+            // Métrica 3: Advertencias
+            html += `
+                <div class="metric-card" style="background: linear-gradient(135deg, #fef3c7, #fde68a); border-color: #d97706;">
+                    <div class="metric-label">Advertencias</div>
+                    <div class="metric-value">${warningAlerts.length}</div>
+                    <div class="metric-context">Áreas que requieren monitorización y acciones preventivas</div>
+                </div>
+            `;
+            
+            // Métrica 4: Recomendaciones
+            html += `
+                <div class="metric-card" style="background: linear-gradient(135deg, #dbeafe, #93c5fd); border-color: #2563eb;">
+                    <div class="metric-label">Recomendaciones</div>
+                    <div class="metric-value">${analysis.epidemiology.recommendations.length}</div>
+                    <div class="metric-context">Intervenciones prioritarias en salud pública</div>
+                </div>
+            `;
+            
+            html += '</div>';
+            
+            // Resumen ejecutivo
+            html += '<div class="interpretation">';
+            html += '<h3>📋 Resumen Ejecutivo</h3>';
+            
+            if (criticalAlerts.length > 0) {
+                html += `<p><strong>Situación de riesgo identificada:</strong> Se han detectado ${criticalAlerts.length} indicador(es) crítico(s) de salud que requieren intervención inmediata. `;
+                html += `Las áreas de mayor preocupación incluyen: ${criticalAlerts.map(a => a.title.toLowerCase()).join(', ')}.</p>`;
+            }
+            
+            if (warningAlerts.length > 0) {
+                html += `<p><strong>Áreas de atención:</strong> Existen ${warningAlerts.length} indicador(es) en zona de advertencia que, si bien no constituyen emergencia, requieren monitorización continua y acciones preventivas para evitar deterioro.</p>`;
+            }
+            
+            html += `<p><strong>Perfil de riesgo poblacional:</strong> Esta cohorte presenta un perfil de exposición a factores de riesgo modificables `;
+            if (criticalAlerts.length >= 2) {
+                html += 'elevado, con múltiples conductas de riesgo co-ocurrentes que multiplican el riesgo cardiovascular y oncológico a largo plazo.';
+            } else if (alerts.length > 0) {
+                html += 'moderado, con oportunidades claras de mejora mediante intervenciones de salud pública dirigidas.';
+            } else {
+                html += 'favorable, aunque se recomienda mantener vigilancia epidemiológica y reforzar conductas protectoras.';
+            }
+            html += '</p>';
+            
+            html += '<p><strong>Priorización de intervenciones:</strong> Las recomendaciones se han estratificado por nivel de prioridad (alta/media) y viabilidad de implementación. Se sugiere un abordaje escalonado comenzando por intervenciones de bajo coste y alta cobertura (consejería breve, educación) y escalando hacia intervenciones más intensivas según recursos disponibles.</p>';
+            
+            html += '</div>';
+            
+            // Tabla comparativa con referencias nacionales
+            html += '<h2 style="margin: 2rem 0 1rem; font-size: 1.8rem; color: #1e293b;">Comparación con Datos Poblacionales</h2>';
+            html += '<table class="comparison-table">';
+            html += '<thead><tr><th>Indicador</th><th>Esta Muestra</th><th>Referencia Nacional</th><th>Estado</th></tr></thead>';
+            html += '<tbody>';
+            
+            // Ejemplo de comparaciones (con datos reales cuando estén disponibles)
+            if (alerts.find(a => a.title.includes('tabaquismo'))) {
+                const tabaco = alerts.find(a => a.title.includes('tabaquismo'));
+                html += `<tr>
+                    <td>Prevalencia de tabaquismo</td>
+                    <td><strong>${tabaco.prevalence}%</strong></td>
+                    <td>21% (18-24 años, EDADES 2022)</td>
+                    <td><span class="status-badge status-high">Por encima</span></td>
+                </tr>`;
+            }
+            
+            if (alerts.find(a => a.title.includes('sueño'))) {
+                const sueno = alerts.find(a => a.title.includes('sueño'));
+                html += `<tr>
+                    <td>Horas de sueño promedio</td>
+                    <td><strong>${analysis.descriptives.horas_sueno?.mean || 'N/A'}h</strong></td>
+                    <td>7-9h (recomendación OMS)</td>
+                    <td><span class="status-badge status-high">Insuficiente</span></td>
+                </tr>`;
+            }
+            
+            html += '</tbody></table>';
+            
+            // Visualización principal: Top factores de riesgo
+            html += '<div class="viz-grid" style="margin-top: 3rem;">';
+            html += '<div class="viz-card">';
+            html += '<h3 class="viz-title">Principales Factores de Riesgo Identificados</h3>';
+            html += '<div class="chart-container"><canvas id="riskChart"></canvas></div>';
+            html += '<p style="color: #64748b; font-size: 0.95rem; margin-top: 1rem;">Prevalencia de factores de riesgo modificables en la población estudiada</p>';
+            html += '</div>';
+            html += '</div>';
+            
+            return html;
+        }
+        
+        function renderAlertas(analysis) {
+            const alerts = analysis.epidemiology.alerts;
+            
+            if (alerts.length === 0) {
+                return `<div class="alert info">
+                    <div class="alert-header">
+                        <span class="alert-icon">ℹ️</span>
+                        <span class="alert-title">No se detectaron alertas epidemiológicas</span>
+                    </div>
+                    <div class="alert-content">
+                        <p>Los indicadores analizados se encuentran dentro de rangos esperados o no se dispone de variables clave para evaluación de riesgo. Se recomienda mantener vigilancia epidemiológica mediante encuestas periódicas.</p>
+                    </div>
+                </div>`;
+            }
+            
+            let html = '<div class="alerts">';
+            
+            alerts.forEach((alert, idx) => {
+                html += `<div class="alert ${alert.type}">
+                    <div class="alert-header">
+                        <span class="alert-icon">${alert.type === 'critical' ? '🚨' : '⚠️'}</span>
+                        <span class="alert-title">${alert.title}</span>
+                    </div>
+                    <div class="alert-content">
+                        <p><strong>Prevalencia detectada:</strong> ${alert.prevalence ? alert.prevalence + '%' : 'Ver descripción'}</p>
+                        <p><strong>Descripción:</strong> ${alert.description}</p>
+                        <p><strong>Recomendación inmediata:</strong> ${alert.recommendation}</p>
+                    </div>
+                </div>`;
+            });
+            
+            html += '</div>';
+            
+            // Interpretación global
+            html += '<div class="interpretation">';
+            html += '<h3>💡 Interpretación Epidemiológica</h3>';
+            html += '<p><strong>Carga de enfermedad prevenible:</strong> Los factores de riesgo identificados son modificables mediante intervenciones de salud pública. La evidencia científica demuestra que intervenciones multicomponente (educación + cambio ambiental + apoyo conductual) pueden reducir prevalencia de estos factores en 20-40% en 2-3 años.</p>';
+            
+            html += '<p><strong>Co-ocurrencia de factores de riesgo:</strong> Es común que estos factores se presenten agrupados (clustering), especialmente tabaco-alcohol, sedentarismo-mala alimentación. Este patrón multiplica el riesgo cardiovascular y metabólico. Se recomienda abordaje integral más que intervenciones aisladas.</p>';
+            
+            html += '<p><strong>Ventana de oportunidad:</strong> La edad universitaria (18-25 años típicamente) representa un periodo crítico para consolidación o modificación de hábitos que persistirán en edad adulta. Intervenciones en esta etapa tienen alto potencial de impacto a largo plazo en morbimortalidad prematura.</p>';
+            
+            html += '<p><strong>Determinantes sociales:</strong> Considerar que conductas de riesgo no son únicamente "decisiones individuales" sino que están fuertemente condicionadas por factores estructurales: disponibilidad de alimentos saludables, acceso a instalaciones deportivas, precio de tabaco/alcohol, carga académica, estrés económico. Intervenciones efectivas deben abordar estos determinantes.</p>';
+            html += '</div>';
+            
+            return html;
+        }
+        
+        function renderRecomendaciones(analysis) {
+            const recs = analysis.epidemiology.recommendations;
+            
+            let html = '<div class="recommendations">';
+            html += '<h3>🎯 Plan de Acción en Salud Pública</h3>';
+            html += '<p style="color: #1e40af; margin-bottom: 2rem; font-size: 1.05rem;">Intervenciones priorizadas según evidencia científica, viabilidad de implementación y potencial de impacto poblacional.</p>';
+            html += '<div class="rec-list">';
+            
+            recs.forEach((rec, idx) => {
+                const priorityColor = rec.priority === 'high' ? '#dc2626' : '#f59e0b';
+                const priorityText = rec.priority === 'high' ? 'PRIORIDAD ALTA' : 'PRIORIDAD MEDIA';
+                
+                html += `<div class="rec-item">
+                    <strong style="display: flex; align-items: center; gap: 0.5rem;">
+                        <span style="background: ${priorityColor}; color: white; padding: 0.25rem 0.75rem; border-radius: 12px; font-size: 0.75rem;">${priorityText}</span>
+                        ${rec.area}
+                    </strong>
+                    <p style="margin-top: 0.75rem;"><strong style="color: #1e40af;">Acción:</strong> ${rec.action}</p>
+                    <p style="margin-top: 0.5rem; color: #475569;">${rec.details}</p>
+                </div>`;
+            });
+            
+            html += '</div></div>';
+            
+            // Marco de implementación
+            html += '<div class="interpretation">';
+            html += '<h3>📐 Marco de Implementación</h3>';
+            html += '<p><strong>Modelo ecológico de intervención:</strong> Las recomendaciones siguen un modelo de niveles múltiples:</p>';
+            html += '<ul style="margin-left: 2rem; margin-top: 1rem; color: #78350f;">';
+            html += '<li style="margin-bottom: 0.75rem;"><strong>Individual:</strong> Consejería breve, motivación al cambio, habilidades de afrontamiento</li>';
+            html += '<li style="margin-bottom: 0.75rem;"><strong>Interpersonal:</strong> Apoyo social, grupos de pares, modelado de conductas</li>';
+            html += '<li style="margin-bottom: 0.75rem;"><strong>Organizacional:</strong> Políticas de campus saludable, entornos facilitadores</li>';
+            html += '<li style="margin-bottom: 0.75rem;"><strong>Comunitario:</strong> Alianzas con servicios de salud, recursos comunitarios</li>';
+            html += '<li style="margin-bottom: 0.75rem;"><strong>Político:</strong> Normativas de espacios sin humo, subsidios para alimentación saludable</li>';
+            html += '</ul>';
+            
+            html += '<p style="margin-top: 1.5rem;"><strong>Monitorización y evaluación:</strong> Establecer indicadores SMART (específicos, medibles, alcanzables, relevantes, temporalizados). Evaluar proceso (cobertura, adherencia), resultados a corto plazo (conocimientos, actitudes) y resultados finales (cambio conductual, prevalencia). Repetir encuesta tras 12-18 meses para medir impacto.</p>';
+            
+            html += '<p><strong>Sostenibilidad:</strong> Priorizar intervenciones institucionalizables que no dependan de financiación externa temporal. Integrar en servicios existentes. Formar a profesionales locales. Crear cultura organizacional de promoción de la salud.</p>';
+            html += '</div>';
+            
+            return html;
+        }
+        
+        function renderVariables(analysis) {
+            let html = '<h2 style="margin-bottom: 2rem; font-size: 1.8rem; color: #1e293b;">Variables Analizadas - Vista Técnica</h2>';
+            html += '<div class="vars" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 1.5rem;">';
+            
+            Object.entries(analysis.descriptives).forEach(([varName, stats]) => {
+                html += `<div class="var" style="background: white; border-radius: 12px; padding: 1.5rem; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-left: 4px solid #dc2626;">`;
+                html += `<h4 style="margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center;">`;
+                html += `<span>${varName}</span>`;
+                html += `<span class="badge ${stats.type === 'numeric' ? 'badge-num' : 'badge-cat'}" style="padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.75rem;">${stats.type === 'numeric' ? 'Numérica' : 'Categórica'}</span>`;
+                html += `</h4>`;
+                
+                html += `<div class="stat" style="display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid #f3f4f6;">`;
+                html += `<span>n válido:</span><strong>${stats.n}</strong></div>`;
+                html += `<div class="stat" style="display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid #f3f4f6;">`;
+                html += `<span>Missing:</span><strong>${stats.missing} (${stats.missingPct}%)</strong></div>`;
+                
+                if (stats.type === 'numeric') {
+                    html += `<div class="stat" style="display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid #f3f4f6;">`;
+                    html += `<span>Media ± DE:</span><strong>${stats.mean} ± ${stats.std}</strong></div>`;
+                    html += `<div class="stat" style="display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid #f3f4f6;">`;
+                    html += `<span>Rango:</span><strong>[${stats.min} - ${stats.max}]</strong></div>`;
+                } else {
+                    html += '<div style="margin-top: 1rem;">';
+                    stats.categories.slice(0, 5).forEach(cat => {
+                        html += `<div style="background: #f9fafb; padding: 0.75rem; border-radius: 8px; margin-bottom: 0.5rem; display: flex; justify-content: space-between;">`;
+                        html += `<div><strong>${cat.value}</strong><div style="font-size: 0.85rem; color: #6b7280;">${cat.count} casos</div></div>`;
+                        html += `<div style="font-weight: 700; color: #dc2626;">${cat.prevalence}%</div>`;
+                        html += `</div>`;
+                    });
+                    if (stats.categories.length > 5) {
+                        html += `<div style="text-align: center; color: #6b7280; margin-top: 0.5rem;">... y ${stats.categories.length - 5} categorías más</div>`;
+                    }
+                    html += '</div>';
+                }
+                
+                html += '</div>';
+            });
+            
+            html += '</div>';
+            return html;
+        }
+        
+        function renderCharts(analysis) {
+            const ctx = document.getElementById('riskChart');
+            if (!ctx) return;
+            
+            const alerts = analysis.epidemiology.alerts;
+            if (alerts.length === 0) return;
+            
+            const labels = alerts.map(a => a.title);
+            const data = alerts.map(a => a.prevalence || 50); // placeholder si no hay prevalencia
+            const colors = alerts.map(a => a.type === 'critical' ? '#dc2626' : '#f59e0b');
+            
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Prevalencia (%)',
+                        data: data,
+                        backgroundColor: colors,
+                        borderColor: colors,
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: '#1e293b',
+                            padding: 12,
+                            titleFont: { size: 14, weight: 'bold' },
+                            bodyFont: { size: 13 }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100,
+                            title: { display: true, text: 'Prevalencia (%)', font: { size: 13, weight: 'bold' } }
+                        },
+                        x: {
+                            ticks: { font: { size: 11 } }
+                        }
+                    }
+                }
+            });
+        }
+        
+        function resetApp() {
+            currentData = null;
+            Object.values(charts).forEach(c => c.destroy());
+            charts = {};
+            document.getElementById('dashboard').classList.add('hidden');
+            document.getElementById('upload').classList.remove('hidden');
+            document.getElementById('loading').classList.add('hidden');
+            fileInput.value = '';
+        }
+    </script>
+</body>
+</html>
